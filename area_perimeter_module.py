@@ -19,32 +19,25 @@ def get_grid_locked_rect(grid_w, grid_h, require_pythagorean=False, max_dim=9):
     """
     Generates a rectangle (or square) whose 4 vertices lie strictly on integer grid coordinates.
     Returns a dict with vertices, exact integer area, exact integer perimeter (if Pythagorean),
-    and internal decomposition lines.
+    and bounding box.
     """
     if require_pythagorean:
-        # Pythagorean triples (a, b, c) so side lengths are clean integers
-        # Scaled by small multipliers so they fit comfortably on a 12x12 grid
         base_vectors = [(3, 4, 5), (4, 3, 5)]
         vx, vy, side_unit = random.choice(base_vectors)
         m1 = 1
         m2 = random.choice([1, 2])
     else:
-        # Primitive vectors (dx, dy) with dx > 0, dy > 0 for clear grid decomposition
         base_vectors = [(1, 1), (1, 2), (2, 1), (1, 3), (3, 1), (2, 3), (3, 2)]
         vx, vy = random.choice(base_vectors)
         side_unit = math.hypot(vx, vy)
-        # Keep dimensions reasonable for middle-school counting
         max_m1 = max(1, min(3, int(max_dim // max(vx, vy))))
         max_m2 = max(1, min(3, int(max_dim // max(vx, vy))))
         m1 = random.randint(1, max_m1)
         m2 = random.randint(1, max_m2)
 
-    # Edge vectors
     u = (m1 * vx, m1 * vy)
     v = (-m2 * vy, m2 * vx)
 
-    # Bounding box offsets relative to P0 = (x0, y0)
-    # P0 = (0,0), P1 = u, P2 = u + v, P3 = v
     xs = [0, u[0], u[0] + v[0], v[0]]
     ys = [0, u[1], u[1] + v[1], v[1]]
 
@@ -55,7 +48,6 @@ def get_grid_locked_rect(grid_w, grid_h, require_pythagorean=False, max_dim=9):
     span_y = max_y - min_y
 
     if span_x > grid_w - 2 or span_y > grid_h - 2:
-        # Fallback to a clean 1x1 tilted square if dimensions exceed grid
         vx, vy, side_unit = 1, 1, math.sqrt(2)
         m1, m2 = random.randint(1, 2), random.randint(1, 2)
         u = (m1 * vx, m1 * vy)
@@ -67,7 +59,6 @@ def get_grid_locked_rect(grid_w, grid_h, require_pythagorean=False, max_dim=9):
         span_x = max_x - min_x
         span_y = max_y - min_y
 
-    # Choose random top-left anchor inside grid margins
     shift_x = random.randint(1, grid_w - 1 - span_x) - min_x
     shift_y = random.randint(1, grid_h - 1 - span_y) - min_y
 
@@ -78,7 +69,6 @@ def get_grid_locked_rect(grid_w, grid_h, require_pythagorean=False, max_dim=9):
         (shift_x + xs[3], shift_y + ys[3]),
     ]
 
-    # Exact Area = |u x v| = (m1*vx)*(m2*vx) - (m1*vy)*(-m2*vy) = m1 * m2 * (vx^2 + vy^2)
     area = m1 * m2 * (vx**2 + vy**2)
     perimeter = int(round(2 * (m1 + m2) * side_unit)) if require_pythagorean else None
     is_square = (m1 == m2)
@@ -141,7 +131,6 @@ def generate_multi_shape_scene(grid_w=14, grid_h=14):
         if all(not boxes_overlap(cand["bbox"], s["bbox"], pad=1) for s in shapes):
             shapes.append(cand)
 
-    # Fallback if random placement couldn't pack 4 shapes
     if len(shapes) < 4:
         shapes = [
             {"verts": [(1, 9), (4, 9), (4, 12), (1, 12)], "area": 9, "perimeter": 12, "is_square": True, "rotated": False, "bbox": (1, 9, 4, 12)},
@@ -150,13 +139,11 @@ def generate_multi_shape_scene(grid_w=14, grid_h=14):
             {"verts": [(9, 2), (11, 4), (9, 6), (7, 4)], "area": 8, "perimeter": None, "is_square": True, "rotated": True, "bbox": (7, 2, 11, 6)},
         ]
 
-    # Ensure strictly unique maximum area (if tied, adjust one axis-aligned shape or regenerate)
     areas = [s["area"] for s in shapes]
     max_a = max(areas)
     if areas.count(max_a) > 1:
         return generate_multi_shape_scene(grid_w, grid_h)
 
-    # Label shapes A, B, C, D near their top/center so AI and students can reference them
     labels = ["A", "B", "C", "D"]
     for idx, s in enumerate(shapes):
         s["label"] = labels[idx]
@@ -168,12 +155,6 @@ def generate_multi_shape_scene(grid_w=14, grid_h=14):
 # --- PROBLEM GENERATOR ---
 
 def generate_area_perimeter_problem(question_type="Both"):
-    """
-    Generates a visual grid problem:
-    1. Single Rotated Shape Area (with optional dotted guidelines)
-    2. Multi-Shape Comparison (shade the shape with the maximum area)
-    3. Perimeter (axis-aligned or Pythagorean triple rotated shape)
-    """
     if question_type == "Area Only":
         q_mode = random.choice(["single_area", "single_area", "multi_max"])
     elif question_type == "Perimeter Only":
@@ -227,7 +208,6 @@ def generate_area_perimeter_problem(question_type="Both"):
 
     else:  # perimeter
         grid_w, grid_h = 10, 8
-        # 50/50 mix of standard axis-aligned rectangle or Pythagorean triple rotated rectangle
         if random.choice([True, False]):
             shape = get_grid_locked_rect(grid_w, grid_h, require_pythagorean=True, max_dim=7)
         else:
@@ -256,61 +236,57 @@ def generate_area_perimeter_problem(question_type="Both"):
 
 def draw_decomposition_guides(ax, shape):
     """
-    Draws internal horizontal and vertical dashed grid lines inside a rotated polygon
-    so students can count whole unit squares and 1/2*b*h right triangles easily.
+    Draws ONLY the structural dashed lines that partition the rotated rectangle/square
+    into 4 outer right-angled triangles and 1 central axis-aligned rectangle/square.
     """
     verts = shape["verts"]
-    poly_path = matplotlib.path.Path(verts)
-    x_min, y_min, x_max, y_max = shape["bbox"]
+    # Identify the 4 extreme vertices:
+    # V0 = bottom-most, V1 = right-most, V2 = top-most, V3 = left-most
+    v_bottom = min(verts, key=lambda p: (p[1], p[0]))
+    v_top = max(verts, key=lambda p: (p[1], -p[0]))
+    v_left = min(verts, key=lambda p: (p[0], -p[1]))
+    v_right = max(verts, key=lambda p: (p[0], p[1]))
 
-    # Sample horizontal and vertical grid segments clipped strictly inside the polygon
-    xs_dense = [x_min + i * 0.02 for i in range(int((x_max - x_min) / 0.02) + 1)]
-    ys_dense = [y_min + i * 0.02 for i in range(int((y_max - y_min) / 0.02) + 1)]
+    x0, y0 = v_bottom
+    x1, y1 = v_right
+    x2, y2 = v_top
+    x3, y3 = v_left
 
-    # Horizontal grid lines inside shape
-    for gy in range(y_min + 1, y_max):
-        pts = [(x, gy) for x in xs_dense]
-        inside = poly_path.contains_points(pts, radius=-1e-4)
-        seg_x = []
-        for idx, is_in in enumerate(inside):
-            if is_in:
-                seg_x.append(xs_dense[idx])
-            elif seg_x:
-                if len(seg_x) > 1:
-                    ax.plot([seg_x[0], seg_x[-1]], [gy, gy], linestyle="--", color="#333333", linewidth=1.1, zorder=4)
-                seg_x = []
-        if len(seg_x) > 1:
-            ax.plot([seg_x[0], seg_x[-1]], [gy, gy], linestyle="--", color="#333333", linewidth=1.1, zorder=4)
+    # 8 structural segments forming the 4 right-angled triangles + central inner box:
+    segments = [
+        # Bottom triangle (V0 -> V1): vertical up from V0 to y1, horizontal left from V1 to x0
+        ((x0, y0), (x0, y1)),
+        ((x1, y1), (x0, y1)),
+        # Right triangle (V1 -> V2): horizontal left from V1 to x2, vertical down from V2 to y1
+        ((x1, y1), (x2, y1)),
+        ((x2, y2), (x2, y1)),
+        # Top triangle (V2 -> V3): vertical down from V2 to y3, horizontal right from V3 to x2
+        ((x2, y2), (x2, y3)),
+        ((x3, y3), (x2, y3)),
+        # Left triangle (V3 -> V0): horizontal right from V3 to x0, vertical up from V0 to y3
+        ((x3, y3), (x0, y3)),
+        ((x0, y0), (x0, y3)),
+    ]
 
-    # Vertical grid lines inside shape
-    for gx in range(x_min + 1, x_max):
-        pts = [(gx, y) for y in ys_dense]
-        inside = poly_path.contains_points(pts, radius=-1e-4)
-        seg_y = []
-        for idx, is_in in enumerate(inside):
-            if is_in:
-                seg_y.append(ys_dense[idx])
-            elif seg_y:
-                if len(seg_y) > 1:
-                    ax.plot([gx, gx], [seg_y[0], seg_y[-1]], linestyle="--", color="#333333", linewidth=1.1, zorder=4)
-                seg_y = []
-        if len(seg_y) > 1:
-            ax.plot([gx, gx], [seg_y[0], seg_y[-1]], linestyle="--", color="#333333", linewidth=1.1, zorder=4)
+    for (p_start, p_end) in segments:
+        if p_start != p_end:
+            ax.plot(
+                [p_start[0], p_end[0]],
+                [p_start[1], p_end[1]],
+                linestyle="--",
+                color="#1f4e78",
+                linewidth=1.5,
+                zorder=6
+            )
 
 
 def draw_grid_problem_image(p_data, show_guides=True, width_px=420, height_px=480):
-    """
-    Renders the prompt text at the top and the crisp 1x1 unit square grid below,
-    leaving whitespace at the bottom for student working.
-    """
     fig, ax = plt.subplots(figsize=(width_px / 100, height_px / 100), dpi=100)
     fig.subplots_adjust(left=0.04, right=0.96, top=0.96, bottom=0.04)
 
     grid_w = p_data["grid_w"]
     grid_h = p_data["grid_h"]
 
-    # Coordinate frame: grid occupies x in [0, grid_w], y in [0, grid_h]
-    # Extra headroom above grid_h for prompt text & "1 unit" scale key; extra space below 0 for workings
     top_pad = 3.2 if grid_h <= 10 else 4.2
     bottom_pad = 2.8 if grid_h <= 10 else 2.2
 
@@ -332,7 +308,7 @@ def draw_grid_problem_image(p_data, show_guides=True, width_px=420, height_px=48
         color='black'
     )
 
-    # 2. "1 unit" Scale Legend (top-right of grid, matching worksheet style)
+    # 2. "1 unit" Scale Legend
     leg_x = grid_w - 1
     leg_y = grid_h + 0.35
     ax.annotate("", xy=(leg_x, leg_y), xytext=(leg_x + 1, leg_y),
@@ -361,11 +337,9 @@ def draw_grid_problem_image(p_data, show_guides=True, width_px=420, height_px=48
         )
         ax.add_patch(poly)
 
-        # Draw internal dotted guidelines for single rotated shapes if enabled
         if show_guides and shape.get("rotated", False) and p_data["q_type"] in ["single_area", "perimeter"]:
             draw_decomposition_guides(ax, shape)
 
-        # Draw subtle shape label (A, B, C, D) for multi-shape comparison questions
         if "label" in shape:
             cx = sum(v[0] for v in shape["verts"]) / 4.0
             cy = sum(v[1] for v in shape["verts"]) / 4.0
@@ -391,7 +365,6 @@ def create_pdf_bytes(question_type="Both", show_guides=True):
     with PdfPages(buffer) as pdf:
         problems = [generate_area_perimeter_problem(question_type=question_type) for _ in range(12)]
 
-        # 2 pages of 6 grid questions each (3 rows x 2 cols) for crisp readability
         for page_idx in range(2):
             fig_ws, axes = plt.subplots(3, 2, figsize=(8.27, 11.69))
             fig_ws.subplots_adjust(left=0.05, right=0.95, top=0.91, bottom=0.04, wspace=0.15, hspace=0.22)
@@ -411,7 +384,6 @@ def create_pdf_bytes(question_type="Both", show_guides=True):
             pdf.savefig(fig_ws)
             plt.close(fig_ws)
 
-        # Answer Key Page
         fig_ans, ax_ans = plt.subplots(figsize=(8.27, 11.69))
         ax_ans.axis('off')
         ax_ans.text(0.5, 0.95, "Area & Perimeter — Answer Key", fontsize=16, fontweight='bold', ha='center')
@@ -477,7 +449,6 @@ def run_app():
         </style>
     """, unsafe_allow_html=True)
 
-    # Strict ap_ session state initialization
     if 'ap_generating' not in st.session_state: st.session_state.ap_generating = True
     if 'ap_pdf_bytes' not in st.session_state: st.session_state.ap_pdf_bytes = None
     if 'ap_suite_refresh_id' not in st.session_state: st.session_state.ap_suite_refresh_id = 0
@@ -530,7 +501,7 @@ def run_app():
             st.toggle(
                 "Show Dotted Guidelines",
                 key="ap_show_guides",
-                help="Displays internal dashed lines to break rotated shapes into whole squares and right triangles."
+                help="Displays structural dashed lines breaking rotated shapes into 4 right triangles and a central rectangle."
             )
             st.radio(
                 "Camera Mode",
@@ -545,7 +516,6 @@ def run_app():
                 on_change=handle_ap_settings_change
             )
 
-    # --- QUIZ START GATE ---
     if st.session_state.ap_selection_mode == "Quiz" and not st.session_state.ap_quiz_active:
         if st.session_state.ap_quiz_completed:
             st.success(f"🎉 Quiz Complete! You completed {st.session_state.ap_questions_answered} questions.")
@@ -563,14 +533,15 @@ def run_app():
             st.rerun()
         return
 
-    # --- RUNNING PROGRESS BANNER ---
     if st.session_state.ap_selection_mode == "Quiz" and st.session_state.ap_quiz_active:
-        col1, col2 = st.columns(2)
-        col1.metric("Question", f"{st.session_state.ap_questions_answered + 1} / 10")
-        col2.metric("Guidelines", "On" if st.session_state.ap_show_guides else "Off")
-        st.divider()
+        st.markdown(
+            f"<div style='text-align: center; padding: 8px; background-color: rgba(128, 128, 128, 0.1); border-radius: 5px; margin-bottom: 12px;'>"
+            f"<b>Question:</b> {st.session_state.ap_questions_answered + 1} / 10 &nbsp;&nbsp;|&nbsp;&nbsp; "
+            f"<b>Guidelines:</b> {'On' if st.session_state.ap_show_guides else 'Off'}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
-    # --- QUESTION GENERATION ---
     if st.session_state.ap_generating or 'ap_problem_data' not in st.session_state:
         st.session_state.ap_generating = True
         with st.spinner("Generating grid problem..."):
@@ -585,7 +556,6 @@ def run_app():
 
     else:
         p_data = st.session_state.ap_problem_data
-        # Render image dynamically so toggling "Show Dotted Guidelines" updates the current question immediately
         bg_image = draw_grid_problem_image(
             p_data,
             show_guides=st.session_state.get('ap_show_guides', True),
